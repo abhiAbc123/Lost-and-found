@@ -188,14 +188,13 @@ function PostFound() {
   const [phone, setPhone] = useState("");
   const [image, setImage] = useState(null);
   const [loadingDesc, setLoadingDesc] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [suggestions, setSuggestions] = useState([]);
   const [errorMessage, setErrorMessage] = useState("");
+
   const navigate = useNavigate();
 
+  // ---------------- AI DESCRIPTION ----------------
   const handleGenerateDescription = async () => {
-    if (loadingDesc) return;
-
     if (!name.trim() || !location.trim()) {
       return alert("Enter item name and location first!");
     }
@@ -203,9 +202,14 @@ function PostFound() {
     try {
       setLoadingDesc(true);
       const { data } = await generateDescription(name, location);
+
       if (data.description) {
         setSuggestions([data.description]);
         setDescription(data.description);
+      } else {
+        setSuggestions([]);
+        setDescription("");
+        alert("No suggestions generated");
       }
     } catch (err) {
       console.error(err);
@@ -215,16 +219,23 @@ function PostFound() {
     }
   };
 
+  // ---------------- SUBMIT ----------------
   const handleSubmit = async (e) => {
     e.preventDefault();
     setErrorMessage("");
 
-    if (phone && !/^[0-9]{10}$/.test(phone)) {
-      setErrorMessage("Enter valid 10-digit phone number");
-      return;
+    // 🔒 Frontend validation
+    if (!image) {
+      return setErrorMessage("Image is required!");
     }
 
-    setIsSubmitting(true);
+    if (description.trim().length < 10) {
+      return setErrorMessage("Description too short!");
+    }
+
+    if (location.trim().length < 3) {
+      return setErrorMessage("Enter valid location!");
+    }
 
     try {
       const formData = new FormData();
@@ -234,39 +245,23 @@ function PostFound() {
       formData.append("type", "Found");
       formData.append("date", new Date().toISOString());
       formData.append("phone", phone);
-      if (image) formData.append("image", image);
+      formData.append("image", image);
 
       await API.post("/items", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
 
       alert("Item posted successfully!");
-
-      try {
-        const audio = new Audio("/notification.mp3");
-        audio.play();
-      } catch (e) {}
-
       navigate("/myposts");
 
     } catch (err) {
-      if (!err.response) {
-        setErrorMessage("Server not reachable. Try again later.");
-      } 
-      else if (err.response?.data?.message === "Fake Post Detected") {
-        setErrorMessage(`🚫 AI Rejection: ${err.response.data.reason}`);
-      } 
-      else if (err.response?.status === 403) {
-        setErrorMessage("⚠️ Unauthorized. Please log in again.");
-      } 
-      else {
+      if (err.response?.data?.message === "Fake post detected") {
+        setErrorMessage("🚫 Fake post detected! Please enter proper details.");
+      } else {
         setErrorMessage(
           err.response?.data?.message || "Failed to post item"
         );
       }
-      console.error(err);
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
@@ -275,116 +270,101 @@ function PostFound() {
       <h3 className="mb-4 text-center">Post Found Item</h3>
 
       {errorMessage && (
-        <div className="alert alert-danger border-2 animate__animated animate__shakeX">
-          <strong>Security Check:</strong> {errorMessage}
-        </div>
+        <div className="alert alert-danger">{errorMessage}</div>
       )}
 
       <form onSubmit={handleSubmit}>
+        {/* ITEM NAME */}
         <div className="mb-3">
-          <label className="form-label">Item Name</label>
+          <label>Item Name</label>
           <input
             type="text"
             className="form-control"
-            placeholder="e.g. Black Backpack"
+            placeholder="Enter item name"
             value={name}
             onChange={(e) => setName(e.target.value)}
             required
           />
         </div>
 
+        {/* LOCATION */}
         <div className="mb-3">
-          <label className="form-label">Location Found</label>
+          <label>Location Found</label>
           <input
             type="text"
             className="form-control"
-            placeholder="e.g. Metro Station Gate 2"
+            placeholder="Enter location"
             value={location}
             onChange={(e) => setLocation(e.target.value)}
             required
           />
         </div>
 
+        {/* DESCRIPTION */}
         <div className="mb-3">
-          <label className="form-label">Description</label>
-
-          {suggestions.length > 0 && (
-            <div className="mb-2">
-              <small className="text-muted">Suggestion:</small>
-              <div className="border p-2 rounded bg-light">
-                {suggestions[0]}
-              </div>
-            </div>
-          )}
+          <label>Description</label>
 
           <div className="d-flex gap-2 mb-2">
             <textarea
               className="form-control"
-              placeholder="Provide details about the item..."
+              placeholder="Enter description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               required
             />
+
             <button
               type="button"
-              className="btn btn-info text-white"
+              className="btn btn-info"
               onClick={handleGenerateDescription}
               disabled={loadingDesc}
             >
-              {loadingDesc ? "..." : "AI Suggest"}
+              {loadingDesc ? "Generating..." : "AI Suggest"}
             </button>
           </div>
+
+          {suggestions.length > 0 && (
+            <div className="d-flex flex-wrap gap-2">
+              {suggestions.map((s, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  className="btn btn-sm btn-outline-primary"
+                  onClick={() => setDescription(s)}
+                >
+                  Suggestion {i + 1}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
+        {/* PHONE */}
         <div className="mb-3">
-          <label className="form-label">Phone Number (Optional)</label>
+          <label>Phone Number (Optional)</label>
           <input
             type="tel"
             className="form-control"
+            placeholder="Enter phone number"
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
           />
         </div>
 
+        {/* IMAGE */}
         <div className="mb-3">
-          <label className="form-label">Upload Image</label>
+          <label>Upload Image (Required)</label>
           <input
             type="file"
             className="form-control"
-            accept="image/*"
             onChange={(e) => setImage(e.target.files[0])}
+            required
           />
-          <small className="text-muted">
-            AI will verify the photo against your details.
-          </small>
-
-          {image && (
-            <img
-              src={URL.createObjectURL(image)}
-              alt="preview"
-              className="mt-2 rounded"
-              style={{
-                width: "100%",
-                maxHeight: "200px",
-                objectFit: "cover",
-              }}
-            />
-          )}
         </div>
 
-        <button
-          className="btn btn-success w-100 py-2 font-weight-bold"
-          type="submit"
-          disabled={isSubmitting || !name || !location || !description}
-        >
-          {isSubmitting ? (
-            <>
-              <span className="spinner-border spinner-border-sm me-2"></span>
-              AI Verifying Item...
-            </>
-          ) : (
-            "Submit Found Post"
-          )}
+        {/* SUBMIT */}
+        <button className="btn btn-success w-100" type="submit">
+          Submit
         </button>
       </form>
     </div>
